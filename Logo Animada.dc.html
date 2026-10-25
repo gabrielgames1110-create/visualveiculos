@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="ds/styles.css">
+  <script src="ds/bundle.js"></script>
+</helmet>
+<div style="position:relative;width:100%;height:100%">{{ efeito }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:540,&quot;height&quot;:244},&quot;estilo&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Vitrine 3D&quot;,&quot;Holofote&quot;,&quot;Farol&quot;,&quot;Partículas&quot;],&quot;default&quot;:&quot;Vitrine 3D&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;animada&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;interativa&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  r = { stage: React.createRef(), box: React.createRef(), b: React.createRef(), c: React.createRef(), cv: React.createRef() };
+  rx = 6; ry = 0; hx = 38; hy = 40; fp = 50; fi = 0;
+  mouse = null; visivel = true; parts = null; grupos = null; cache = null;
+  reduz = typeof window !== 'undefined' && !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  LOGO = 'assets/logo-visual-veiculos.png';
+  LADO = 'assets/logo-3d-lado.png';
+  ESTILOS = ['Vitrine 3D', 'Holofote', 'Farol', 'Partículas'];
+
+  estilo() { return this.ESTILOS.includes(this.props.estilo) ? this.props.estilo : 'Vitrine 3D'; }
+  parado() { return this.reduz || this.props.animada === false; }
+
+  componentDidMount() { this.ligar(); this.raf = requestAnimationFrame(this.tick); }
+  componentDidUpdate(pp) { if (pp.estilo !== this.props.estilo || pp.animada !== this.props.animada) this.ligar(); }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); this.desligar(); }
+
+  ligar(tent = 0) {
+    this.desligar();
+    const st = this.r.stage.current;
+    if (!st) { if (tent < 20) this.tl = setTimeout(() => this.ligar(tent + 1), 120); return; }
+    const cl = (v) => Math.max(-1, Math.min(1, v));
+    this.zona = st.closest('[data-logo-zona]') || st;
+    this.pm = (e) => {
+      const r = st.getBoundingClientRect(), bx = this.r.box.current ? this.r.box.current.getBoundingClientRect() : r;
+      this.mouse = {
+        x: cl((e.clientX - (r.left + r.width / 2)) / (window.innerWidth * 0.5)),
+        y: cl((e.clientY - (r.top + r.height / 2)) / (window.innerHeight * 0.5)),
+        u: (e.clientX - bx.left) / bx.width, w: (e.clientY - bx.top) / bx.height
+      };
+    };
+    this.pl = () => { this.mouse = null; };
+    this.pd = () => { if (this.parts && this.props.interativa !== false) this.explodir(); };
+    this.zona.addEventListener('pointermove', this.pm);
+    this.zona.addEventListener('pointerleave', this.pl);
+    this.zona.addEventListener('pointerdown', this.pd);
+    if ('IntersectionObserver' in window) { this.io = new IntersectionObserver(([en]) => { this.visivel = en.isIntersecting; }); this.io.observe(st); }
+    this.parts = null; this.grupos = null;
+    if (this.estilo() === 'Partículas' && !this.parado()) this.iniciarParticulas();
+  }
+  desligar() {
+    clearTimeout(this.tl);
+    if (this.zona) {
+      this.zona.removeEventListener('pointermove', this.pm);
+      this.zona.removeEventListener('pointerleave', this.pl);
+      this.zona.removeEventListener('pointerdown', this.pd);
+    }
+    if (this.io) this.io.disconnect();
+    if (this.ro) this.ro.disconnect();
+    this.zona = null; this.io = null; this.ro = null; this.mouse = null;
+  }
+
+  tick = (now) => {
+    this.raf = requestAnimationFrame(this.tick);
+    if (!this.visivel || !this.r.stage.current) return;
+    const t = now / 1000, e = this.estilo(), parado = this.parado(), m = (this.reduz || this.props.interativa === false) ? null : this.mouse;
+    if (e === 'Holofote') this.animarHolofote(t, parado, m);
+    else if (e === 'Farol') this.animarFarol(t, parado, m);
+    else if (e === 'Partículas') { if (this.parts) this.desenharParticulas(t, m); }
+    else this.animarVitrine(t, parado, m);
+  };
+
+  animarVitrine(t, parado, m) {
+    const obj = this.r.box.current; if (!obj) return;
+    const alvoY = m ? m.x * 26 : (parado ? -14 : Math.sin(t * 0.5) * 20);
+    const alvoX = m ? 6 - m.y * 12 : (parado ? 6 : 5 + Math.sin(t * 0.8 + 1.2) * 5);
+    this.ry += (alvoY - this.ry) * 0.06;
+    this.rx += (alvoX - this.rx) * 0.06;
+    const fy = parado ? 0 : Math.sin(t * 1.2) * 6;
+    obj.style.transform = `translateY(${fy.toFixed(2)}px) rotateX(${this.rx.toFixed(2)}deg) rotateY(${this.ry.toFixed(2)}deg)`;
+    const luz = this.r.c.current;
+    if (luz) { luz.style.transform = `scale(${(1 + fy / 45).toFixed(3)})`; luz.style.opacity = (0.8 + fy / 36).toFixed(3); }
+    const sh = this.r.b.current;
+    if (sh) { const c = (t % 7) / 1.6; sh.style.backgroundPosition = `${!parado && c < 1 ? (100 - c * 100).toFixed(1) : 0}% 0`; }
+  }
+  animarHolofote(t, parado, m) {
+    const box = this.r.box.current; if (!box) return;
+    const tx = m ? m.u * 100 : (parado ? 38 : 50 + 42 * Math.sin(t * 0.42));
+    const ty = m ? m.w * 100 : (parado ? 40 : 46 + 26 * Math.sin(t * 0.84 + 1));
+    this.hx += (tx - this.hx) * 0.08;
+    this.hy += (ty - this.hy) * 0.08;
+    box.style.setProperty('--lx', this.hx.toFixed(1) + '%');
+    box.style.setProperty('--ly', this.hy.toFixed(1) + '%');
+    box.style.setProperty('--fx', ((this.hx + 30) / 1.6).toFixed(1) + '%');
+    box.style.setProperty('--fy', ((this.hy + 80) / 2.6).toFixed(1) + '%');
+  }
+  animarFarol(t, parado, m) {
+    const box = this.r.box.current; if (!box) return;
+    let p, f;
+    if (parado) { p = 50; f = 0; }
+    else if (m) { p = Math.max(-20, Math.min(120, m.u * 100)); f = 1; }
+    else { const q = (t % 6.5) / 2.4; if (q < 1) { p = -25 + 150 * q; f = Math.sin(Math.PI * q); } else { p = 125; f = 0; } }
+    this.fp += (p - this.fp) * (m ? 0.18 : 0.5);
+    this.fi += (f - this.fi) * 0.15;
+    box.style.setProperty('--p', this.fp.toFixed(1) + '%');
+    box.style.setProperty('--f', this.fi.toFixed(3));
+    box.style.setProperty('--i', parado ? '1' : (this.fi * 0.6).toFixed(3));
+  }
+
+  iniciarParticulas() {
+    const cv = this.r.cv.current, st = this.r.stage.current; if (!cv || !st) return;
+    const cs = getComputedStyle(st);
+    this.corOuro = cs.getPropertyValue('--color-accent-400').trim() || '#c99a55';
+    this.corPrata = cs.getPropertyValue('--color-neutral-100').trim() || '#f1f0f0';
+    const im = new Image();
+    im.onload = () => {
+      const box = this.r.box.current; if (!box || this.r.cv.current !== cv) return;
+      const SW = Math.max(140, Math.min(260, Math.round(box.clientWidth / 2))), SH = Math.round(SW * im.height / im.width);
+      const oc = document.createElement('canvas'); oc.width = SW; oc.height = SH;
+      const ox = oc.getContext('2d'); ox.drawImage(im, 0, 0, SW, SH);
+      const d = ox.getImageData(0, 0, SW, SH).data, ps = [], gr = [[], [], [], [], [], []];
+      for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) {
+        const i = (y * SW + x) * 4; if (d[i + 3] < 120) continue;
+        const a = Math.random() * 6.2832, rr = 0.7 + Math.random() * 0.9;
+        const p = { hx: (x + 0.5) / SW, hy: (y + 0.5) / SH, x: 0.5 + Math.cos(a) * rr, y: 0.5 + Math.sin(a) * rr * 2.4, vx: 0, vy: 0 };
+        ps.push(p);
+        gr[(d[i] - d[i + 2] > 40 ? 0 : 3) + ((Math.random() * 3) | 0)].push(p);
+      }
+      this.parts = ps; this.grupos = gr;
+      this.dimensionar();
+      if (window.ResizeObserver) { if (this.ro) this.ro.disconnect(); this.ro = new ResizeObserver(() => this.dimensionar()); this.ro.observe(cv); }
+    };
+    im.src = this.LOGO;
+  }
+  dimensionar() {
+    const cv = this.r.cv.current; if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.max(1, Math.round(cv.clientWidth * dpr));
+    cv.height = Math.max(1, Math.round(cv.clientHeight * dpr));
+  }
+  explodir() {
+    for (const p of this.parts) { const a = Math.random() * 6.2832, v = 0.012 + Math.random() * 0.03; p.vx += Math.cos(a) * v; p.vy += Math.sin(a) * v * 2.4; }
+  }
+  desenharParticulas(t, m) {
+    const cv = this.r.cv.current, ps = this.parts; if (!cv || !ps || cv.width < 2) return;
+    const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+    const SX = W / 1.12, SY = H / 1.24, ASP = SX / SY, OX = 0.06 * SX, OY = 0.12 * SY, R = 0.11;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      p.vx += (p.hx - p.x) * 0.045; p.vy += (p.hy - p.y) * 0.045;
+      if (m) {
+        const dx = p.x - m.u, dy = (p.y - m.w) / ASP, dd = Math.sqrt(dx * dx + dy * dy);
+        if (dd < R && dd > 0.0001) { const f = (1 - dd / R) * 0.012; p.vx += dx / dd * f; p.vy += dy / dd * f * ASP; }
+      }
+      p.vx *= 0.86; p.vy *= 0.86; p.x += p.vx; p.y += p.vy;
+    }
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    const s = Math.max(1, SX / 290);
+    for (let g = 0; g < 6; g++) {
+      const lista = this.grupos[g];
+      ctx.fillStyle = g < 3 ? this.corOuro : this.corPrata;
+      ctx.globalAlpha = 0.55 + 0.4 * Math.sin(t * 2.4 + (g % 3) * 2.1);
+      for (let i = 0; i < lista.length; i++) { const p = lista[i]; ctx.fillRect(OX + p.x * SX, OY + p.y * SY, s, s); }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  criar(e, parado) {
+    const h = React.createElement;
+    const camada = { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', userSelect: 'none' };
+    const img = (key, src, extra, alt) => h('img', { key, src, alt: alt || '', draggable: false, style: { ...camada, ...(extra || {}) } });
+    const ouro = (pct) => `color-mix(in srgb, var(--color-accent) ${pct}%, transparent)`;
+    const halo = (pct) => h('div', { key: 'halo', 'aria-hidden': true, style: { position: 'absolute', left: '-12%', right: '-12%', top: '-30%', bottom: '6%', background: `radial-gradient(closest-side, ${ouro(pct)}, transparent)`, pointerEvents: 'none' } });
+    const palco = (...filhos) => h('div', { ref: this.r.stage, style: { position: 'relative', width: '100%', height: '100%', perspective: '1000px', perspectiveOrigin: '50% 35%' } }, ...filhos);
+    const caixa = (est, ...filhos) => h('div', { key: 'box', ref: this.r.box, style: { position: 'absolute', aspectRatio: '1194 / 416', ...est } }, ...filhos);
+
+    if (e === 'Holofote') {
+      const M = 'radial-gradient(ellipse 30% 88% at var(--lx) var(--ly), black 0%, black 30%, transparent 100%)';
+      const F = 'linear-gradient(to top, rgba(0,0,0,0.42) 0%, transparent 62%)';
+      const aceso = (key, alt) => img(key, this.LOGO, { WebkitMaskImage: M, maskImage: M }, alt);
+      return palco(caixa({ left: '10%', width: '80%', top: '3%', '--lx': '38%', '--ly': '40%', '--fx': '42.5%', '--fy': '46.2%' },
+        h('div', { key: 'luz', 'aria-hidden': true, style: { position: 'absolute', left: '-30%', right: '-30%', top: '-80%', bottom: '-80%', background: `radial-gradient(ellipse 22% 30% at var(--fx) var(--fy), ${ouro(28)}, transparent)`, pointerEvents: 'none' } }),
+        img('esc', this.LADO),
+        aceso('aceso', 'Visual Veículos'),
+        h('div', { key: 'piso', 'aria-hidden': true, style: { position: 'absolute', left: '-12%', right: '-12%', top: '100%', height: '1px', background: `linear-gradient(90deg, transparent, ${ouro(60)}, transparent)` } }),
+        h('div', { key: 'refl', 'aria-hidden': true, style: { position: 'absolute', left: 0, right: 0, top: '100%', height: '100%', transform: 'scaleY(-1)', WebkitMaskImage: F, maskImage: F, pointerEvents: 'none' } },
+          img('r-esc', this.LADO), aceso('r-aceso'))));
+    }
+
+    if (e === 'Farol') {
+      const B = 'linear-gradient(90deg, transparent calc(var(--p) - 20%), black var(--p), transparent calc(var(--p) + 20%))';
+      return palco(caixa({ left: '4%', width: '92%', top: '8%', '--p': '50%', '--i': parado ? '1' : '0', '--f': '0' },
+        img('esc', this.LADO),
+        img('base', this.LOGO, { opacity: 'calc(0.3 + var(--i) * 0.7)' }, 'Visual Veículos'),
+        img('faixa', this.LOGO, { WebkitMaskImage: B, maskImage: B, opacity: 'var(--f)' }),
+        h('div', { key: 'feixe', 'aria-hidden': true, style: { position: 'absolute', top: '56%', height: '18%', left: 'calc(var(--p) - 110%)', width: '220%', transform: 'translateY(-50%)', opacity: 'var(--f)', background: `radial-gradient(ellipse 50% 50% at 50% 50%, color-mix(in srgb, var(--color-neutral-100) 85%, transparent) 0%, ${ouro(45)} 12%, transparent 60%)`, pointerEvents: 'none' } }),
+        h('div', { key: 'nucleo', 'aria-hidden': true, style: { position: 'absolute', top: '56%', left: 'var(--p)', width: '12%', aspectRatio: '1 / 1', transform: 'translate(-50%, -50%)', opacity: 'var(--f)', borderRadius: '50%', background: `radial-gradient(closest-side, var(--color-neutral-100), ${ouro(60)} 45%, transparent)`, pointerEvents: 'none' } })));
+    }
+
+    if (e === 'Partículas') {
+      return palco(halo(12), caixa({ left: '4%', width: '92%', top: '9%' },
+        img('base', this.LOGO, { opacity: parado ? 1 : 0.18 }, 'Visual Veículos'),
+        parado ? null : h('canvas', { key: 'cv', ref: this.r.cv, 'aria-hidden': true, style: { position: 'absolute', left: '-6%', width: '112%', top: '-12%', height: '124%', pointerEvents: 'none' } })));
+    }
+
+    const N = 14, PASSO = 1.5, faces = [];
+    for (let i = N; i >= 1; i--) faces.push(img('c' + i, this.LADO, { transform: `translateZ(${(-i * PASSO).toFixed(1)}px)` }));
+    faces.push(img('frente', this.LOGO, { transform: 'translateZ(0.1px)' }, 'Visual Veículos'));
+    const mk = `url(${this.LOGO})`;
+    faces.push(h('div', { key: 'brilho', ref: this.r.b, 'aria-hidden': true, style: { ...camada, transform: 'translateZ(0.3px)', WebkitMaskImage: mk, maskImage: mk, WebkitMaskSize: '100% 100%', maskSize: '100% 100%', WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat', backgroundImage: 'linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--color-neutral-100) 80%, transparent) 50%, transparent 58%)', backgroundSize: '300% 100%', backgroundRepeat: 'no-repeat', backgroundPosition: '100% 0' } }));
+    const anel = (key, inset, pct) => h('div', { key, style: { position: 'absolute', inset, borderRadius: '50%', border: `1px solid ${ouro(pct)}` } });
+    return palco(halo(24),
+      h('div', { key: 'base', 'aria-hidden': true, style: { position: 'absolute', left: '7%', right: '7%', bottom: '8%', height: '30%', pointerEvents: 'none' } },
+        anel('a1', '0', 42), anel('a2', '17% 11%', 22),
+        h('div', { key: 'luz', ref: this.r.c, style: { position: 'absolute', inset: '18% 16%', borderRadius: '50%', background: `radial-gradient(closest-side, ${ouro(32)}, transparent)` } })),
+      caixa({ left: '2%', right: '2%', top: '3%', transformStyle: 'preserve-3d', willChange: 'transform' }, ...faces));
+  }
+
+  renderVals() {
+    const e = this.estilo(), p = this.parado(), k = e + '|' + p;
+    if (!this.cache || this.cache.k !== k) this.cache = { k, el: this.criar(e, p) };
+    return { efeito: this.cache.el };
+  }
+}
+</script>
+</body>
+</html>
